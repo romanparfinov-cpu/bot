@@ -1,0 +1,16 @@
+{
+  "name": "isterika-telegram-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for ISSTERIKA shop admin",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.15.3",
+    "firebase-admin": "^11.11.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
