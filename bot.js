@@ -69,40 +69,10 @@ bot.start((ctx) => {
     if (ctx.from.id !== ADMIN_ID) return ctx.reply('⛔ Нет доступа');
     
     ctx.reply(
-        '👋 *Добро пожаловать в админ-бота ISSTERIKA!*\n\n' +
-        '📦 *Управление товарами*\n\n' +
+        '👋 *Добро пожаловать в бот ISSTERIKA!*\n\n' +
+        '📦 *Добавление товаров*\n\n' +
         '/add — ➕ Добавить товар\n' +
-        '/edit — ✏️ Редактировать товар\n' +
-        '/stats — 📊 Статистика\n' +
-        '/list — 📋 Список товаров\n' +
-        '/cancel — ❌ Отменить\n' +
-        '/help — ❓ Помощь',
-        { parse_mode: 'Markdown' }
-    );
-});
-
-bot.help((ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
-    ctx.reply(
-        '📖 *Как добавить товары:*\n\n' +
-        '1️⃣ Нажмите /add\n' +
-        '2️⃣ Выберите категорию\n' +
-        '3️⃣ Отправьте товары одной строкой или несколькими строками\n\n' +
-        '*Формат для жидкостей и снюса:*\n' +
-        '`Название | Описание | Крепость | Цена | Количество`\n\n' +
-        '*Формат для под-систем и расходников:*\n' +
-        '`Название | Описание | Цена | Количество`\n\n' +
-        '*Количество:*\n' +
-        '• число от 1 до 20 — в наличии (столько штук)\n' +
-        '• 0 — нет в наличии\n' +
-        '• - или "забронировано" — забронировано\n\n' +
-        '*Пример:*\n' +
-        '`ЗЛАЯ МОНАШКА | Арбуз | 70mg | 25.90 | 5\nЗЛАЯ МОНАШКА | Текила | 70mg | 25.90 | 12\nГРЕХ | Манго | 60mg | 22.90 | 0`\n\n' +
-        '*Редактирование:*\n' +
-        '1️⃣ /edit\n' +
-        '2️⃣ Введите ID товара (8 символов из /list)\n' +
-        '3️⃣ Отправьте новые данные в том же формате\n\n' +
-        '/cancel — отменить',
+        '/cancel — ❌ Отменить',
         { parse_mode: 'Markdown' }
     );
 });
@@ -110,7 +80,7 @@ bot.help((ctx) => {
 bot.command('add', (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     
-    userStates.set(ctx.from.id, { step: 'category', products: [] });
+    userStates.set(ctx.from.id, { step: 'category' });
     ctx.reply(
         '📦 *Выберите категорию товара:*',
         { parse_mode: 'Markdown', ...categoryKeyboard }
@@ -120,28 +90,12 @@ bot.command('add', (ctx) => {
 bot.command('cancel', (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     
-    const state = userStates.get(ctx.from.id);
-    if (state) {
-        const count = state.products?.length || 0;
+    if (userStates.has(ctx.from.id)) {
         userStates.delete(ctx.from.id);
-        ctx.reply(`❌ *Добавление отменено*\n\nДобавлено товаров: ${count}`, { parse_mode: 'Markdown' });
+        ctx.reply('❌ *Добавление отменено*', { parse_mode: 'Markdown' });
     } else {
         ctx.reply('ℹ️ Нет активного процесса', { parse_mode: 'Markdown' });
     }
-});
-
-// ====================== РЕДАКТИРОВАНИЕ ТОВАРА ======================
-bot.command('edit', (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
-    
-    userStates.set(ctx.from.id, { step: 'edit_waiting_for_id' });
-    ctx.reply(
-        '✏️ *Редактирование товара*\n\n' +
-        'Отправьте *ID товара* (8 символов из команды /list)\n\n' +
-        'Пример: `a1b2c3d4`\n\n' +
-        'Или /cancel для отмены',
-        { parse_mode: 'Markdown' }
-    );
 });
 
 // ====================== ОБРАБОТКА КНОПОК ======================
@@ -155,7 +109,7 @@ bot.action(/cat_(\d)/, (ctx) => {
     
     const state = userStates.get(ctx.from.id);
     if (!state) {
-        userStates.set(ctx.from.id, { step: 'data', category: category.code, needsStrength: category.needsStrength, products: [] });
+        userStates.set(ctx.from.id, { step: 'data', category: category.code, needsStrength: category.needsStrength });
     } else {
         state.step = 'data';
         state.category = category.code;
@@ -177,7 +131,7 @@ bot.action(/cat_(\d)/, (ctx) => {
     instruction += '• число от 1 до 20 — в наличии\n';
     instruction += '• 0 — нет в наличии\n';
     instruction += '• - или "забронировано" — забронировано\n\n';
-    instruction += '📌 Можете отправлять несколько партий. /cancel — завершить.';
+    instruction += 'Можете отправлять несколько партий. /cancel — завершить.';
     
     ctx.reply(instruction, { parse_mode: 'Markdown' });
     ctx.answerCbQuery();
@@ -205,171 +159,10 @@ bot.on('text', async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     
     const state = userStates.get(ctx.from.id);
-    if (!state) return;
+    if (!state || state.step !== 'data') return;
     
     const text = ctx.message.text.trim();
-    if (text.startsWith('/') && text !== '/cancel') return;
-    
-    // РЕДАКТИРОВАНИЕ: ожидание ID
-    if (state.step === 'edit_waiting_for_id') {
-        const productId = text;
-        
-        try {
-            // Ищем товар по ID (проверяем все)
-            const snapshot = await db.ref('products').once('value');
-            const products = snapshot.val();
-            
-            let foundKey = null;
-            let foundProduct = null;
-            
-            for (const [key, value] of Object.entries(products || {})) {
-                if (key.slice(-8) === productId || key === productId) {
-                    foundKey = key;
-                    foundProduct = value;
-                    break;
-                }
-            }
-            
-            if (!foundKey) {
-                return ctx.reply('❌ *Товар не найден*\n\nПроверьте ID и попробуйте снова\nИли /cancel', { parse_mode: 'Markdown' });
-            }
-            
-            // Сохраняем в состояние
-            state.step = 'edit_data';
-            state.editKey = foundKey;
-            state.editProduct = foundProduct;
-            state.needsStrength = (foundProduct.category === 'liquid' || foundProduct.category === 'snus');
-            
-            let instruction = `✏️ *Редактирование товара*\n\n`;
-            instruction += `📦 Текущий товар:\n`;
-            instruction += `• Название: ${foundProduct.name}\n`;
-            instruction += `• Описание: ${foundProduct.flavor}\n`;
-            if (state.needsStrength) instruction += `• Крепость: ${foundProduct.strength || 'не указана'}\n`;
-            instruction += `• Цена: ${foundProduct.price} BYN\n`;
-            instruction += `• Количество: ${foundProduct.quantity === 'reserved' ? 'Забронировано' : foundProduct.quantity + ' шт'}\n\n`;
-            
-            instruction += `📝 *Отправьте новые данные* в формате:\n\n`;
-            
-            if (state.needsStrength) {
-                instruction += '`Название | Описание | Крепость | Цена | Количество`\n\n';
-            } else {
-                instruction += '`Название | Описание | Цена | Количество`\n\n';
-            }
-            
-            instruction += '*Количество:*\n';
-            instruction += '• число от 1 до 20 — в наличии\n';
-            instruction += '• 0 — нет в наличии\n';
-            instruction += '• - или "забронировано" — забронировано\n\n';
-            instruction += 'Или /cancel для отмены';
-            
-            ctx.reply(instruction, { parse_mode: 'Markdown' });
-            
-        } catch (error) {
-            console.error('Ошибка поиска товара:', error);
-            ctx.reply('❌ *Ошибка*\nПопробуйте позже', { parse_mode: 'Markdown' });
-            userStates.delete(ctx.from.id);
-        }
-        return;
-    }
-    
-    // РЕДАКТИРОВАНИЕ: сохранение новых данных
-    if (state.step === 'edit_data') {
-        const parts = text.split('|').map(p => p.trim());
-        
-        let name, flavor, strength, price, quantity;
-        
-        if (state.needsStrength) {
-            if (parts.length < 5) {
-                return ctx.reply('❌ *Неверный формат*\n\nНужно: `Название | Описание | Крепость | Цена | Количество`\n\nИли /cancel', { parse_mode: 'Markdown' });
-            }
-            name = parts[0];
-            flavor = parts[1];
-            strength = parts[2];
-            price = parts[3];
-            quantity = parts[4];
-        } else {
-            if (parts.length < 4) {
-                return ctx.reply('❌ *Неверный формат*\n\nНужно: `Название | Описание | Цена | Количество`\n\nИли /cancel', { parse_mode: 'Markdown' });
-            }
-            name = parts[0];
-            flavor = parts[1];
-            price = parts[2];
-            quantity = parts[3];
-            strength = null;
-        }
-        
-        // Валидация
-        if (!name || name.length < 2) {
-            return ctx.reply('❌ *Название слишком короткое*', { parse_mode: 'Markdown' });
-        }
-        
-        if (!flavor) {
-            return ctx.reply('❌ *Описание не может быть пустым*', { parse_mode: 'Markdown' });
-        }
-        
-        let priceNum = parseFloat(price.replace(',', '.'));
-        if (isNaN(priceNum) || priceNum < 0) {
-            return ctx.reply('❌ *Неверная цена*', { parse_mode: 'Markdown' });
-        }
-        if (priceNum > 10000) {
-            return ctx.reply('❌ *Цена не может превышать 10000 BYN*', { parse_mode: 'Markdown' });
-        }
-        
-        const quantityValue = parseQuantity(quantity);
-        if (quantityValue === null) {
-            return ctx.reply('❌ *Неверное количество*\n\nДопустимо: число от 1 до 20, 0 (нет), - или "забронировано"', { parse_mode: 'Markdown' });
-        }
-        
-        // Обновляем товар
-        const updatedProduct = {
-            name: name,
-            flavor: flavor,
-            category: state.editProduct.category,
-            price: priceNum.toFixed(2),
-            quantity: quantityValue,
-            updatedAt: Date.now()
-        };
-        
-        if (strength && state.needsStrength) {
-            updatedProduct.strength = strength;
-        } else if (state.editProduct.strength) {
-            updatedProduct.strength = null;
-        }
-        
-        if (state.editProduct.discount) {
-            updatedProduct.discount = state.editProduct.discount;
-        }
-        
-        try {
-            await db.ref('products/' + state.editKey).update(updatedProduct);
-            
-            let quantityText = '';
-            if (quantityValue === 'reserved') quantityText = 'Забронировано';
-            else if (quantityValue === 0) quantityText = 'Нет в наличии';
-            else quantityText = `${quantityValue} шт`;
-            
-            ctx.reply(
-                `✅ *Товар успешно обновлен!*\n\n` +
-                `📦 ${name}\n` +
-                `🍬 ${flavor}\n` +
-                (strength ? `💪 ${strength}\n` : '') +
-                `💰 ${priceNum.toFixed(2)} BYN\n` +
-                `📊 ${quantityText}\n\n` +
-                `🆔 \`${state.editKey.slice(-8)}\``,
-                { parse_mode: 'Markdown' }
-            );
-            
-            userStates.delete(ctx.from.id);
-            
-        } catch (error) {
-            console.error('Ошибка обновления:', error);
-            ctx.reply('❌ *Ошибка обновления товара*', { parse_mode: 'Markdown' });
-        }
-        return;
-    }
-    
-    // ДОБАВЛЕНИЕ: обработка товаров
-    if (state.step !== 'data') return;
+    if (text.startsWith('/')) return;
     
     const lines = text.split('\n').filter(line => line.trim().length > 0);
     
@@ -459,15 +252,12 @@ bot.on('text', async (ctx) => {
         try {
             const newRef = await db.ref('products').push(product);
             successCount++;
-            addedProducts.push({ name, price: priceNum, id: newRef.key.slice(-8), strength, flavor, quantity: quantityValue });
+            addedProducts.push({ name, price: priceNum, id: newRef.key.slice(-8), strength, quantity: quantityValue });
         } catch (error) {
             errorCount++;
             errors.push(`❌ Строка ${i+1}: ошибка БД`);
         }
     }
-    
-    if (!state.products) state.products = [];
-    state.products.push(...addedProducts);
     
     let resultMsg = '';
     
@@ -501,104 +291,6 @@ bot.on('text', async (ctx) => {
     resultMsg += `\n📝 *Отправьте еще товары* или /cancel для завершения`;
     
     await ctx.reply(resultMsg, { parse_mode: 'Markdown' });
-});
-
-// ====================== СТАТИСТИКА ======================
-bot.command('stats', async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
-    
-    await ctx.reply('📊 *Загрузка...*', { parse_mode: 'Markdown' });
-    
-    try {
-        const snapshot = await db.ref('products').once('value');
-        const products = snapshot.val();
-        
-        if (!products) {
-            return ctx.reply('📊 *Нет товаров*\nДобавьте через /add', { parse_mode: 'Markdown' });
-        }
-        
-        const productsArray = Object.values(products);
-        const total = productsArray.length;
-        
-        let inStock = 0;
-        let reserved = 0;
-        let outOfStock = 0;
-        let totalValue = 0;
-        
-        const cats = { liquid: 0, pod: 0, snus: 0, other: 0 };
-        
-        productsArray.forEach(p => {
-            const cat = p.category || 'other';
-            if (cats.hasOwnProperty(cat)) cats[cat]++;
-            
-            if (p.quantity === 'reserved') {
-                reserved++;
-            } else if (p.quantity === 0 || p.quantity === '0') {
-                outOfStock++;
-            } else {
-                inStock++;
-                const price = parseFloat(p.price) || 0;
-                const qty = parseInt(p.quantity) || 0;
-                totalValue += price * qty;
-            }
-        });
-        
-        ctx.reply(
-            `📊 *СТАТИСТИКА ISSTERIKA*\n\n` +
-            `📦 *Всего:* ${total}\n` +
-            `✅ *В наличии:* ${inStock}\n` +
-            `🔸 *Забронировано:* ${reserved}\n` +
-            `❌ *Нет:* ${outOfStock}\n` +
-            `💰 *Стоимость:* ${totalValue.toFixed(2)} BYN\n\n` +
-            `🍬 Жидкости: ${cats.liquid}\n` +
-            `📱 Под-системы: ${cats.pod}\n` +
-            `👃 Снюс: ${cats.snus}\n` +
-            `🔧 Расходники: ${cats.other}`,
-            { parse_mode: 'Markdown' }
-        );
-        
-    } catch (error) {
-        ctx.reply('❌ *Ошибка*', { parse_mode: 'Markdown' });
-    }
-});
-
-// ====================== СПИСОК ТОВАРОВ ======================
-bot.command('list', async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
-    
-    await ctx.reply('📋 *Загрузка...*', { parse_mode: 'Markdown' });
-    
-    try {
-        const snapshot = await db.ref('products').once('value');
-        const products = snapshot.val();
-        
-        if (!products) {
-            return ctx.reply('📋 *Нет товаров*', { parse_mode: 'Markdown' });
-        }
-        
-        const productsArray = Object.entries(products).slice(-15).reverse();
-        let message = `📋 *ПОСЛЕДНИЕ 15 ТОВАРОВ*\n\n`;
-        
-        for (const [id, p] of productsArray) {
-            let status = '';
-            if (p.quantity === 'reserved') status = '🔸 ЗАБРОНИРОВАНО';
-            else if (p.quantity === 0 || p.quantity === '0') status = '❌ НЕТ';
-            else status = `✅ ${p.quantity} шт`;
-            
-            message += `*${p.name}*\n`;
-            message += `   💰 ${p.price} BYN\n`;
-            message += `   📊 ${status}\n`;
-            if (p.flavor) message += `   🍬 ${p.flavor}\n`;
-            if (p.strength) message += `   💪 ${p.strength}\n`;
-            message += `   🆔 \`${id.slice(-8)}\`\n\n`;
-            
-            if (message.length > 3500) break;
-        }
-        
-        ctx.reply(message, { parse_mode: 'Markdown' });
-    } catch (error) {
-        ctx.reply('❌ *Ошибка*', { parse_mode: 'Markdown' });
-    }
 });
 
 // ====================== ЗАПУСК ======================
